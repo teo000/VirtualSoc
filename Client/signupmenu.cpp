@@ -47,6 +47,7 @@ void SignupMenu::SendSignupData()
 
        // printf(rsp)
         QDialog* response = new QDialog(this);
+        response->resize(150, 50);
         QLabel* labelResponse = new QLabel(response);
         labelResponse->setText(rsp);
         response->open();

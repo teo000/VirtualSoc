@@ -7,4 +7,5 @@ private:
 public:
       int OpenDatabase();
       int SignupUser(char* username, char* password, char* name);
+      int CheckUsernameExists(char* username);
 };

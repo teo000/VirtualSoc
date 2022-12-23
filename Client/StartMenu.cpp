@@ -4,7 +4,7 @@ StartMenu::StartMenu(QWidget *parent)
     : QWidget(parent)
 {
     setWindowTitle("Social Network");
-    resize(100,100);
+    resize(200,100);
     login=new QPushButton(this);
     login->setText("Login");
     connect(login, SIGNAL(clicked()), this, SLOT(OpenLoginMenu()));

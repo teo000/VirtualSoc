@@ -18,7 +18,7 @@
 
 char* ReceiveMessage(int sd, int& len);
 void ParseRequest(Database& db, int sd, char* msg, int& len);
-void SendResponse(int sd, char* msg, int& len);
+void SendResponse(int sd, const char* msg, int len);
 
 void Login(Database& db, int sd);
 void Signup(Database& db, int sd);
@@ -32,6 +32,8 @@ int main ()
 		perror("[Server] socket() error: ");
 		exit(1);
 	}
+
+      //if((setsockopt()))
 
 	bzero(&srvAddr, sizeof(srvAddr));
     	bzero(&cliAddr, sizeof(cliAddr));
@@ -137,7 +139,7 @@ void ParseRequest(Database& db, int sd, char* msg, int& len){
 	}
 }
 
-void SendResponse(int client, char* rasp, int& len){
+void SendResponse(int client, const char* rasp, int len){
 	int bytesWritten = write(client, rasp, len); 
 	if (bytesWritten == -1) {
 		perror("[Server] Error at writing to client!");
@@ -182,23 +184,14 @@ void Signup(Database& db, int sd){
 	int userLength=0, passLength=0;
 	char* username = ReceiveMessage(sd, userLength);
 	char* password = ReceiveMessage(sd, passLength);
-      printf("[Server]: am ajuns aici 1!\n");
       char nume[20]="nume frumos\0";
-      printf("[Server]: am ajuns aici 2!\n");
 
-      if((db.SignupUser(username, password, nume)) ==-1){
-            printf("[Server]: am ajuns aici 3!\n");
-            char rasp[10] = "failure"; 
-            printf("[Server]: failure %s\n", rasp);
-            int len = strlen(rasp);
-            SendResponse(sd, rasp, len);
+      switch (db.SignupUser(username, password, nume)){
+            case 0: SendResponse(sd, "Account created successfully!", 30);
+            break;
+            case 1: SendResponse(sd, "Username already exists!\n Please try again!", 44);
+            break;
+            case -1: SendResponse(sd, "An error occured!\n Please try again!", 36);
+            break;
       }
-      else {
-            printf("[Server]: am ajuns aici 4!\n");
-            char rasp[10] = "success"; 
-		printf("[Server]: succes: %s\n", rasp);
-		int len = strlen(rasp);
-		SendResponse(sd, rasp, len);
-      }
-      printf("[Server]: am ajuns aici 5!\n");
 }
