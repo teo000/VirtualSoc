@@ -4,24 +4,48 @@
 #include <errno.h>
 #include <unistd.h>
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
 #include <sys/wait.h>
-#include "database.h"
+#include <string>
+#include <string.h>
+#include <map>
+#include <iostream>
+using namespace std;
+#include "databaseMySQL.h"
+#include "helper_functions.h"
 #define PORT 4444
 #define noOfCommands 4
 
-// struct Commands{
-// 	char* name;
-// 	int length;
-// }command[noOfCommands] = {{"", 0}, {"login", 6}, {"sign-up", 7}, {"exit", 4}};
+bool isAdmin = false;
+bool loggedIn = false;
+string loggedUser;
+const char* adminPass = "parola";
 
-char* ReceiveMessage(int sd, int& len);
-void ParseRequest(Database& db, int sd, char* msg, int& len);
-void SendResponse(int sd, const char* msg, int len);
+void ParseRequest(Database& db, int sd, char* msg);
+
 
 void Login(Database& db, int sd);
 void Signup(Database& db, int sd);
+void Post(Database& db, int sd);
+void LoadFeed(Database& db, int sd);
+void AddFriend(Database& db, int sd);
+void Exit(Database& db, int sd);
+void Logout(Database& db, int sd);
+void SendMessage(Database& db, int sd);
+void LoadMessenger(Database& db, int sd);
+void DeleteUser(Database& db, int sd);
+void DeletePost(Database& db, int sd);
+void PermissionToMessage(Database& db, int sd);
+void FriendList(Database& db, int sd);
+
+map<string, void(*)(Database&, int)> commLogMenu= {
+      {"login", &Login}, {"signup", &Signup}
+}, commands{
+      {"post", &Post}, {"load_feed", &LoadFeed}, {"login", &Login}, {"signup", &Signup}, {"addfriend", &AddFriend}
+      ,{"exit", &Exit}, {"logout", &Logout}, {"send_message", &SendMessage}, {"load_messenger", &LoadMessenger},
+       {"delete_user", &DeleteUser}, {"delete_post", &DeletePost}, {"permission_to_message", &PermissionToMessage}, 
+       {"friend_list", &FriendList}
+};
 
 int main ()
 {
@@ -69,16 +93,13 @@ int main ()
 			continue;
 		} else {
 			close(sd);
-                 // Database *db = new Database();
                  Database db;
                   if(db.OpenDatabase()==-1) exit(-1);
 			while(1){
-				int len=0;
-				char* msg = ReceiveMessage(client, len);
-				
+				char* msg = ReceiveMessage(client);
 				//printf("[server]: [main]: %s\n", msg);
-				ParseRequest(db, client, msg, len);
-				//SendResponse(client, msg, len);
+                        ParseRequest(db, client, msg);
+                        free(msg);
 			}
 			exit(0);
 		}
@@ -86,112 +107,210 @@ int main ()
 	return 0;
 }	
 
-char* ReceiveMessage(int sd, int& len){
-	if((read(sd, &len, sizeof(len)))==0){
-		perror("[Server] Error at reading from client 1!");
-		if (-1 == close(sd)) {
-			perror("[Server] Error at closing the client1!\n");
-			printf("[Server] Connection terminated unsuccessfuly!1\n");
-			exit(-1);
-		}
-		printf("[Server] Connection terminated successfuly!1");
-		exit(-1);
-	}
-	char* msg = (char*)malloc(sizeof(char)*len + 1);
-	bzero(msg, len+1);
-	int bytesRead = read(sd, msg, len);
-	if (bytesRead == -1) {
-		perror("[Server] Error at reading from client!2");
-		if (-1 == close(sd)) {
-			perror("[Server] Error at closing the client!2\n");
-			printf("[Server] Connection terminated unsuccessfuly!2\n");
-			exit(-1);
-		}
-		printf("[Server] Connection terminated successfuly!2");
-	}
-	if (bytesRead == 0) {
-		printf("[Server] Client has disconnected!2");
-		exit(-1);
-	}
-	printf("[Server]: %d: %s\n", len, msg);
-	return msg;
+void ParseRequest(Database& db, int sd, char* msg){
+      string str(msg);
+      commands[str](db, sd);
 }
 
-void ParseRequest(Database& db, int sd, char* msg, int& len){
-	if((strncmp(msg, "quit", 4))==0){
-		char rasp[] = "quit\0";
-		SendResponse(sd, rasp, len);
-		exit(0);
-	}
-	if((strncmp(msg, "login", 5))==0){
-		char rasp[] = "login\0";
-		//SendResponse(sd, rasp, len); 
-		Login(db, sd);
-	}
-      else if((strncmp(msg, "signup", 5))==0){
-		char rasp[] = "signup\0";
-		//SendResponse(sd, rasp, len); 
-		Signup(db, sd);
-	}
-	else{
-		char rasp[] = "buna\0";
-		SendResponse(sd, rasp, len);
-	}
-}
-
-void SendResponse(int client, const char* rasp, int len){
-	int bytesWritten = write(client, rasp, len); 
-	if (bytesWritten == -1) {
-		perror("[Server] Error at writing to client!");
-		if (-1 == close(client)) {
-			perror("[Server] Error at closing the client!\n");
-			printf("[Server] Connection terminated unsuccessfuly!\n");
-			exit(-1);
-		}
-		printf("[Server] Connection terminated successfuly!");
-	}
-	if (bytesWritten == 0) {
-		printf("[Server] Client has disconnected!");
-		exit(-1);
-	}
-	printf("[Server] am trimis : %d: %s\n", len, rasp);
-}
 
 void Login(Database& db, int sd){
 	printf("[Server]: Login!\n");
-	int userLength=0, passLength=0;
-	char* username = ReceiveMessage(sd, userLength);
-	char* password = ReceiveMessage(sd, passLength);
+	char* username = ReceiveMessage(sd);
+	char* password = ReceiveMessage(sd);
+      int admin = GetInt(sd);
 
-	if((strcmp(username, "username"))==0 && (strcmp(password, "password"))==0)
-	{
-		char rasp[10] = "success"; 
-		printf("[Server]: succes: %s\n", rasp);
-		int len = strlen(rasp);
-		SendResponse(sd, rasp, len);
-	}
-	else {
-		char rasp[10] = "failure"; 
-		printf("[Server]: failure %s\n", rasp);
-		int len = strlen(rasp);
-		SendResponse(sd, rasp, len);
-	}
+      switch(db.LoginUser(username, password, admin)){
+            case 0: {
+
+
+                  SendResponse(sd, "Login successful!");
+                  loggedIn = true;
+                  loggedUser = username;
+                  isAdmin = admin;
+            }
+            break;
+            case 1: SendResponse(sd, "Account does not exist!");
+            break;
+            case 2: SendResponse(sd, "Wrong Password!");
+            break;
+            case 3: SendResponse(sd, "Please use the proper login window for your account type");
+            break;
+            case -1: SendResponse(sd, "An error occured!\n Please try again!");
+            break;
+      }
 }
 
 void Signup(Database& db, int sd){
 
 	printf("[Server]: Signup!\n");
-	int userLength=0, passLength=0;
-	char* username = ReceiveMessage(sd, userLength);
-	char* password = ReceiveMessage(sd, passLength);
-      char nume[20]="nume frumos\0";
+      char* name = ReceiveMessage(sd);
+	char* username = ReceiveMessage(sd);
+	char* password = ReceiveMessage(sd);
+      int isAdmin = GetInt(sd);
+      int privacy;
+      if(isAdmin) {
+            char* adminPassEntered = ReceiveMessage(sd);
+            if(strcmp(adminPassEntered, adminPass)!=0){
+                  SendResponse(sd, "The admin password is incorrect\n");
+                  free(name); free(username); free(password); free(adminPassEntered);
+                  return;
+            }
+            privacy = 0;
+      }
+      else privacy = GetInt(sd);
+      printf("verificam\n");
+      switch (db.SignupUser(username, password, name, isAdmin, privacy)){
+            case 0: SendResponse(sd, "Account created successfully!");
+            break;
+            case 1: SendResponse(sd, "Username already exists!\n Please try again!");
+            break;
+            case -1: SendResponse(sd, "An error occured!\n Please try again!");
+            break;
+      }
+      free(name); free(username); free(password);
+}
 
-      switch (db.SignupUser(username, password, nume)){
-            case 0: SendResponse(sd, "Account created successfully!", 30);
+void Post(Database& db, int sd){
+      char* post = ReceiveMessage(sd);
+      int privacy;
+      if(!isAdmin) privacy = GetInt(sd);
+      else privacy = 0;
+      switch(db.Post(loggedUser.c_str(), post, privacy)){
+            case 0: SendResponse(sd, "Success");
             break;
-            case 1: SendResponse(sd, "Username already exists!\n Please try again!", 44);
+            case -1: SendResponse(sd, "Error");
             break;
-            case -1: SendResponse(sd, "An error occured!\n Please try again!", 36);
+      }
+      free(post);
+}
+
+void LoadFeed(Database& db, int sd){
+      printf("LoadFeed");
+      if(loggedIn = true){
+            if(isAdmin)
+                  switch(db.LoadAllPosts(sd)){
+                        case 0: SendResponse(sd, "Success");
+                        break;
+                        case -1: SendResponse(sd, "Error");
+                  }
+            else
+                  switch(db.LoadPosts(sd, loggedUser.c_str())){
+                        case 0: SendResponse(sd, "Success");
+                        break;
+                        case -1: SendResponse(sd, "Error");
+                  }
+      }
+      else
+            switch(db.LoadPosts(sd)){
+                  case 0: SendResponse(sd, "Success");
+                  break;
+                  case -1: SendResponse(sd, "Error");
+            }
+}
+void AddFriend(Database& db, int sd){
+      char* frnd = ReceiveMessage(sd);
+      int status = GetInt(sd);
+      printf("%s %d", frnd, status);
+      switch(db.AddFriend(loggedUser.c_str(), frnd, status)){
+            case 0: SendResponse(sd, "Success");
             break;
+            case -1: SendResponse(sd, "User does not exit");
+            break;
+            case 1: SendResponse(sd, "The user is already in your friend list!");
+            break;
+            case 2: SendResponse(sd, "Contul dumneavoastra a fost sters de catre un administrator");
+      }
+      free(frnd);
+}
+void Exit(Database& db, int sd){
+      printf("Conection closed successfully!");
+      close(sd);
+      exit(0);
+}
+
+void Logout(Database& db, int sd){
+      isAdmin = false;
+      loggedIn = false;
+      loggedUser.erase();
+}
+
+void SendMessage(Database& db, int sd){
+      char* receiver = ReceiveMessage(sd);
+      char* text = ReceiveMessage(sd);
+       switch(db.SendMessage(loggedUser.c_str(),receiver, text)){
+            case 0: SendResponse(sd, "Success");
+            break;
+            case -1: SendResponse(sd, "Error");
+            break;
+            case 1: SendResponse(sd, "User does not exist");
+            break;
+      }
+      free(receiver);
+      free(text);
+}
+
+void LoadMessenger(Database& db, int sd){
+      switch(db.LoadMessenger(sd, loggedUser.c_str())){
+            case 0: SendResponse(sd, "Success");
+            break;
+            case -1: SendResponse(sd, "Error");
+            break;
+      }
+}
+
+void DeleteUser(Database& db, int sd){
+      printf("am ajuns in delete user");
+      char* user = ReceiveMessage(sd);
+      switch(db.DeleteUser(user)){
+            case 0: SendResponse(sd, "Success");
+            break;
+            case -1: SendResponse(sd, "Error");
+            break;
+            case 1: SendResponse(sd, "User does not exist");
+      }
+      free(user);
+}
+
+void DeletePost(Database& db, int sd){
+      char* user = ReceiveMessage(sd);
+      char* time = ReceiveMessage(sd);
+      switch(db.DeletePost(user, time)){
+            case 0: SendResponse(sd, "Success");
+            break;
+            case -1: SendResponse(sd, "Error");
+      }
+      free(user); free(time);
+}
+
+void PermissionToMessage(Database& db, int sd){
+      char* user1 =  ReceiveMessage(sd);
+      char* user2 =  ReceiveMessage(sd);
+      //SendInt(sd, db.PermissionToMessage(user1, user2))
+      switch(db.IsPublic(user2)){
+            case 1: SendInt(sd, 1);
+            break;
+            case 0: {
+                  switch(db.IsFriends(user2, user1)){
+                        case 1: SendInt(sd, 1);
+                        break;
+                        case 0: SendInt(sd, 0);
+                        break;
+                        case -1: SendInt(sd, -1);
+                  }
+            }
+            break;
+            case -1: SendInt(sd, -1);
+            break;
+            case 2: SendInt(sd, 2);
+      }
+      free(user1); free(user2);
+}
+
+void FriendList(Database& db, int sd){
+      printf("am ajuns aici\n");
+      switch(db.FriendList(sd, loggedUser.c_str())){
+            case 0: SendResponse(sd, "Success");
+            break;
+            case -1: SendResponse(sd, "Error");
       }
 }
